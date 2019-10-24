@@ -10,17 +10,17 @@ pragma solidity ^0.5.0;
  * the owner.
  */
  
- Contract Ownable {
+contract Ownable {
      address public owner;
      
-     event TransferOwnership(address _from, address _to);
+     event OwnershipTransferred(address _from, address _to);
      
      /**
      * @dev Initializes the contract setting the deployer as the initial owner.
      */
      constructor() public {
          owner = msg.sender;
-         emit TransferOwnership(address(0), msg.sender);
+         emit OwnershipTransferred(address(0), msg.sender);
      }
      
      /**
@@ -43,8 +43,8 @@ pragma solidity ^0.5.0;
      * Can only be called by the current owner.
      */
      function TransferOwnership(address _newOwner) external onlyOwner {
-         require(newOwner != address(0), "Ownable: new owner is the zero address");
-         emit TransferOwnership(owner, _newOwner);
+         require(_newOwner != address(0), "Ownable: new owner is the zero address");
+         emit OwnershipTransferred(owner, _newOwner);
          owner = _newOwner;
      }
  }
