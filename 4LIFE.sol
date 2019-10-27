@@ -11,23 +11,31 @@ pragma solidity ^0.5.0;
  */
 
 contract Ownable {
-    address public owner;
+    address private _owner;
 
-    event OwnershipTransferred(address _from, address _to);
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
 
     /**
      * @dev Initializes the contract setting the deployer as the initial owner.
      */
-    constructor() public {
-        owner = msg.sender;
-        emit OwnershipTransferred(address(0), msg.sender);
+    constructor () internal {
+        address msgSender = msg.sender;
+        _owner = msgSender;
+        emit OwnershipTransferred(address(0), msgSender);
+    }
+
+    /**
+     * @dev Returns the address of the current owner.
+     */
+    function owner() public view returns (address) {
+        return _owner;
     }
 
     /**
      * @dev Throws if called by any account other than the owner.
      */
     modifier onlyOwner() {
-        require(msg.sender == owner, "Ownable: caller is not the owner");
+        require(isOwner(), "Ownable: caller is not the owner");
         _;
     }
 
@@ -35,17 +43,24 @@ contract Ownable {
      * @dev Returns true if the caller is the current owner.
      */
     function isOwner() public view returns (bool) {
-        return msg.sender == owner;
+        return msg.sender == _owner;
     }
 
     /**
      * @dev Transfers ownership of the contract to a new account (`newOwner`).
      * Can only be called by the current owner.
      */
-    function TransferOwnership(address _newOwner) external onlyOwner {
-        require(_newOwner != address(0), "Ownable: new owner is the zero address");
-        emit OwnershipTransferred(owner, _newOwner);
-        owner = _newOwner;
+    function transferOwnership(address newOwner) public onlyOwner {
+        _transferOwnership(newOwner);
+    }
+
+    /**
+     * @dev Transfers ownership of the contract to a new account (`newOwner`).
+     */
+    function _transferOwnership(address newOwner) internal {
+        require(newOwner != address(0), "Ownable: new owner is the zero address");
+        emit OwnershipTransferred(_owner, newOwner);
+        _owner = newOwner;
     }
 }
 
@@ -110,6 +125,16 @@ library SafeMath {
         if (a % b != 0) {
             c = c + 1;
         }
+
+        return c;
+    }
+
+    /**
+     * @dev Returns the percent value of the amount `a` with a percentage `b`
+     * `b` must be an integer
+     */
+    function percVal(uint256 a, uint256 b) internal pure returns (uint256) {
+        uint256 c = mul(a, b) / 100;
 
         return c;
     }
