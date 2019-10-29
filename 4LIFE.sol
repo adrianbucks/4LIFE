@@ -242,7 +242,7 @@ contract ForLIFEToken is Ownable, ERC20Detailed {
      */
     mapping (address => uint256) private _balances;
     mapping (address => mapping (address => uint256)) private _allowed;
-    uint256 private _totalSupply = 2000000.mul(10**_tokenDecimals);
+    uint256 private _totalSupply = 200000000000000;
     uint256 private _percent = 2;
 
     /**
@@ -271,7 +271,7 @@ contract ForLIFEToken is Ownable, ERC20Detailed {
 
         return c;
     }
-    
+
     function getPond() public view returns (address) {
 
         return pond;
