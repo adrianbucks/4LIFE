@@ -257,7 +257,11 @@ contract ForLIFEToken is Ownable, ERC20Detailed {
     /**
      * @dev Create the token
      */
-    constructor () public payable ERC20Detailed(_tokenName, _tokenSymbol, _tokenDecimals) {
+    constructor (address _pondAddress) public payable ERC20Detailed(_tokenName, _tokenSymbol, _tokenDecimals) {
+        require(_pondAddress != address(0), "4LIFE: Pond address is address(0)");
+
+        emit SetPond(address(0), _pondAddress);
+        pond = _pondAddress;
         _balances[pond] = _totalSupply;
 
         emit Transfer(address(0), pond, _totalSupply);
@@ -277,7 +281,7 @@ contract ForLIFEToken is Ownable, ERC20Detailed {
 
     function _setPond(address _pondAddress) internal {
         require(_pondAddress != address(0), "4LIFE: Pond address is address(0)");
-        emit SetPond(address(0), _pondAddress);
+        emit SetPond(pond, _pondAddress);
         pond = _pondAddress;
     }
 
