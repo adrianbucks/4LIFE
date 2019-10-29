@@ -133,11 +133,7 @@ library SafeMath {
      * @dev Returns the percent value of the amount `a` with a percentage `b`
      * `b` must be an integer
      */
-    function percVal(uint256 a, uint256 b) internal pure returns (uint256) {
-        uint256 c = a.mul(b).div(100);
-
-        return c;
-    }
+    
 }
 
 /**
@@ -270,6 +266,12 @@ contract ForLIFEToken is Ownable, ERC20Detailed {
     /**
      * @dev Public methods
      */
+    function percVal(uint256 a, uint256 b) internal pure returns (uint256) {
+        uint256 c = a.mul(b).div(100);
+
+        return c;
+    }
+    
     function getPond() public view returns (address) {
 
         return pond;
