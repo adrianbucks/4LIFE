@@ -253,7 +253,7 @@ contract ForLIFEToken is Ownable, ERC20Detailed {
     /**
      * @dev Create the token
      */
-    constructor (address _pondAddress) public payable ERC20Detailed(_tokenName, _tokenSymbol, _tokenDecimals) {
+    constructor (address payable _pondAddress) public payable ERC20Detailed(_tokenName, _tokenSymbol, _tokenDecimals) {
         require(_pondAddress != address(0), "4LIFE: Pond address is address(0)");
 
         emit SetPond(address(0), _pondAddress);
@@ -281,7 +281,7 @@ contract ForLIFEToken is Ownable, ERC20Detailed {
         _setPond(pondAddress);
     }
 
-    function _setPond(address _pondAddress) internal {
+    function _setPond(address payable _pondAddress) internal {
         require(_pondAddress != address(0), "4LIFE: Pond address is address(0)");
         emit SetPond(pond, _pondAddress);
         pond = _pondAddress;
@@ -306,7 +306,7 @@ contract ForLIFEToken is Ownable, ERC20Detailed {
         require(amount <= _balances[msg.sender], "4LIFE: Not enough funds");
         require(to != address(0), "4LIFE: Transfer to address(0)");
 
-        uint256 tokensToBurn = amount.percVal(_percent);
+        uint256 tokensToBurn = percVal(amount, _percent);
         uint256 tokensToPond = tokensToBurn;
         uint256 tokensToTransfer = amount.sub(tokensToBurn).sub(tokensToPond);
 
@@ -337,7 +337,7 @@ contract ForLIFEToken is Ownable, ERC20Detailed {
         require(amount <= _allowed[from][msg.sender], "4LIFE: Not enough allowance");
         require(to != address(0), "4LIFE: Transfer to address(0)");
 
-        uint256 tokensToBurn = amount.percVal(_percent);
+        uint256 tokensToBurn = percVal(amount, _percent);
         uint256 tokensToPond = tokensToBurn;
         uint256 tokensToTransfer = amount.sub(tokensToBurn).sub(tokensToPond);
 
