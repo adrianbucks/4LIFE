@@ -65,6 +65,30 @@ contract Ownable {
 }
 
 /**
+ * @dev Contract module that helps prevent reentrant calls to a function.
+ */
+contract ReentrancyGuard {
+    // counter to allow mutex lock with only one SSTORE operation
+    uint256 private _guardCounter;
+
+    constructor () internal {
+        // The counter starts at one to prevent changing it from zero to a non-zero
+        // value, which is a more expensive operation.
+        _guardCounter = 1;
+    }
+
+    /**
+     * @dev Prevents a contract from calling itself, directly or indirectly.
+     */
+    modifier nonReentrant() {
+        _guardCounter += 1;
+        uint256 localCounter = _guardCounter;
+        _;
+        require(localCounter == _guardCounter, "ReentrancyGuard: reentrant call");
+    }
+}
+
+/**
  * @dev Wrappers over Solidity's arithmetic operations with added overflow
  * checks.
  */
@@ -128,12 +152,6 @@ library SafeMath {
 
         return c;
     }
-
-    /**
-     * @dev Returns the percent value of the amount `a` with a percentage `b`
-     * `b` must be an integer
-     */
-    
 }
 
 /**
@@ -223,7 +241,7 @@ contract ERC20Detailed is IERC20 {
 /**
  * @dev 4LIFE Token
  */
-contract ForLIFEToken is Ownable, ERC20Detailed {
+contract ForLIFEToken is Ownable, ReentrancyGuard, ERC20Detailed {
 
     using SafeMath for uint256;
 
@@ -234,21 +252,29 @@ contract ForLIFEToken is Ownable, ERC20Detailed {
     string private _tokenSymbol = "4LIFE";
     uint8 private _tokenDecimals = 8;
 
-    // TO-DO    -    add the main wallet address
+    /**
+     * Pond management
+     * TO-DO    -    add the main wallet address
+     */
     address payable pond;
+    uint256 private _rate = 5500000000000;
+    uint256 private _ratePerTokenSubdivision = _rate.div(10**8);
 
     /**
      * Token management
      */
     mapping (address => uint256) private _balances;
     mapping (address => mapping (address => uint256)) private _allowed;
-    uint256 private _totalSupply = 200000000000000;
+    uint256 private _tokenAmount = 10000000;
+    uint256 private _totalSupply = _tokenAmount.mul(10**8);
     uint256 private _percent = 2;
 
     /**
      * Events
      */
-    event SetPond(address indexed previousOwner, address indexed newOwner);
+    event PondAddressSet(address indexed previousPond, address indexed newPond);
+    event PondRateSet(uint256 previousRate, uint256 newRate);
+    event TokensPurchased(address indexed purchaser, address indexed beneficiary, uint256 value, uint256 amount);
 
     /**
      * @dev Create the token
@@ -256,7 +282,7 @@ contract ForLIFEToken is Ownable, ERC20Detailed {
     constructor (address payable _pondAddress) public payable ERC20Detailed(_tokenName, _tokenSymbol, _tokenDecimals) {
         require(_pondAddress != address(0), "4LIFE: Pond address is address(0)");
 
-        emit SetPond(address(0), _pondAddress);
+        emit PondAddressSet(address(0), _pondAddress);
         pond = _pondAddress;
         _balances[pond] = _totalSupply;
 
@@ -264,7 +290,7 @@ contract ForLIFEToken is Ownable, ERC20Detailed {
     }
 
     /**
-     * @dev Public methods
+     * @dev Returns percentage `b` amount from value `a`
      */
     function percVal(uint256 a, uint256 b) internal pure returns (uint256) {
         uint256 c = a.mul(b).div(100);
@@ -272,26 +298,61 @@ contract ForLIFEToken is Ownable, ERC20Detailed {
         return c;
     }
 
+    /**
+     * @dev Returns `pond` address
+     */
     function getPond() public view returns (address) {
 
         return pond;
     }
 
+    /**
+     * @dev Set `pond` address
+     * Only contract owner can do it
+     */
     function setPond(address payable pondAddress) public onlyOwner {
         _setPond(pondAddress);
     }
 
     function _setPond(address payable _pondAddress) internal {
         require(_pondAddress != address(0), "4LIFE: Pond address is address(0)");
-        emit SetPond(pond, _pondAddress);
+        emit PondAddressSet(pond, _pondAddress);
         pond = _pondAddress;
     }
 
+    /**
+     * @dev Returns `_rate`
+     */
+    function getRate() public view returns (uint256) {
+
+        return _rate;
+    }
+
+    /**
+     * @dev Set `_rate`
+     * Only contract owner can do it
+     */
+    function setRate(uint256 sellRate) public onlyOwner {
+        _setRate(sellRate);
+    }
+
+    function _setRate(uint256 _sellRate) internal {
+        require(_sellRate > 0, "4LIFE: Rate is 0");
+        emit PondRateSet(_rate, _sellRate);
+        _rate = _sellRate;
+    }
+
+    /**
+     * @dev Returns the total supply
+     */
     function totalSupply() public view returns (uint256) {
 
         return _totalSupply;
     }
 
+    /**
+     * @dev Returns the balance of the `account` provided
+     */
     function balanceOf(address account) public view returns (uint256) {
 
         return _balances[account];
@@ -373,5 +434,40 @@ contract ForLIFEToken is Ownable, ERC20Detailed {
         emit Approval(msg.sender, spender, _allowed[msg.sender][spender]);
 
         return true;
+    }
+
+    /**
+     * @dev Accept eth
+     */
+    function () external payable {
+        buyTokens(msg.sender);
+    }
+
+    /**
+     * @dev Handle eth coming in and send back tokens
+     */
+    function buyTokens(address beneficiary) public nonReentrant payable {
+        uint256 weiAmount = msg.value;
+        require(beneficiary != address(0), "4LIFE: Buyer is address(0)");
+        require(weiAmount > _ratePerTokenSubdivision, "4LIFE: weiAmount is to small");
+
+        // Get token units to handle
+        uint256 tokenAmount = weiAmount.div(_ratePerTokenSubdivision);
+        uint256 tokensToBurn = percVal(tokenAmount, _percent);
+        uint256 tokensToPond = tokensToBurn;
+        uint256 tokensToTransfer = tokenAmount.sub(tokensToBurn).sub(tokensToPond);
+
+        // adjust token balances
+        _balances[pond] = _balances[pond].sub(tokenAmount);
+        _balances[msg.sender] = _balances[msg.sender].add(tokensToTransfer);
+        _balances[pond] = _balances[pond].add(tokensToPond);
+        _totalSupply = _totalSupply.sub(tokensToBurn);
+
+        emit Transfer(pond, msg.sender, tokensToTransfer);
+        emit Transfer(pond, pond, tokensToPond);
+        emit Transfer(pond, address(0), tokensToBurn);
+
+        // Forward funds
+        pond.transfer(msg.value);
     }
 }
