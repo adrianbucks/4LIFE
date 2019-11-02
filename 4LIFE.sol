@@ -4,12 +4,7 @@ pragma solidity ^0.5.0;
  * @dev Contract module which provides a basic access control mechanism, where
  * there is an account (an owner) that can be granted exclusive access to
  * specific functions.
- *
- * This module is used through inheritance. It will make available the modifier
- * `onlyOwner`, which can be applied to your functions to restrict their use to
- * the owner.
  */
-
 contract Ownable {
     address private _owner;
 
@@ -53,10 +48,6 @@ contract Ownable {
     function transferOwnership(address newOwner) public onlyOwner {
         _transferOwnership(newOwner);
     }
-
-    /**
-     * @dev Transfers ownership of the contract to a new account (`newOwner`).
-     */
     function _transferOwnership(address newOwner) internal {
         require(newOwner != address(0), "Ownable: new owner is the zero address");
         emit OwnershipTransferred(_owner, newOwner);
@@ -89,10 +80,8 @@ contract ReentrancyGuard {
 }
 
 /**
- * @dev Wrappers over Solidity's arithmetic operations with added overflow
- * checks.
+ * @dev Wrappers over Solidity's arithmetic operations with added overflow checks.
  */
-
 library SafeMath {
     /**
      * @dev Returns the addition of two unsigned integers, reverting on overflow.
@@ -256,9 +245,19 @@ contract ForLIFEToken is Ownable, ReentrancyGuard, ERC20Detailed {
      * Pond management
      * TO-DO    -    add the main wallet address
      */
-    address payable pond;
-    uint256 private _rate = 5500000000000;
-    uint256 private _ratePerTokenSubdivision = _rate.div(10**8);
+    address payable private _pond; // charity wallet
+    uint256 private _saleRate = 5500000000000; // WEI
+    uint256 private _ratePerTokenSubdivision = _saleRate.div(10**8);
+    uint256 private _minWeiForPondEntry = 250000000000000000; // WEI
+    uint256 private _minWeiForDiscount = 10000000000000000000; // WEI
+    uint256 private _discount = 25; // %
+    // Uses 0 for none, 1 for Ducks, 2 for Swans
+    mapping (address => uint256) private _PondFamily;
+    mapping (uint256 => address) private _PondID;
+    uint256 private _totalPondMembers = 0;
+    uint256 private _weiRaised;
+    uint256 private _highestDeposit;
+    address private _highestDepositAddress;
 
     /**
      * Token management
@@ -272,8 +271,12 @@ contract ForLIFEToken is Ownable, ReentrancyGuard, ERC20Detailed {
     /**
      * Events
      */
-    event PondAddressSet(address indexed previousPond, address indexed newPond);
-    event PondRateSet(uint256 previousRate, uint256 newRate);
+    event PondAddressChanged(address indexed previousPond, address indexed newPond);
+    event SaleRateChanged(uint256 previousRate, uint256 newRate);
+    event MinimumAmountForPondEntryChanged(uint256 previousEntryAmount, uint256 newEntryAmount);
+    event MinimumAmountForDiscountChanged(uint256 previousDicountAmount, uint256 newDiscountAmount);
+    event DiscountPercentageChanged(uint256 previousDiscount, uint256 newDiscount);
+    event NewHighestDeposit(address indexed prevAddress, address indexed newAddress, uint256 prevAmount, uint256 newAmount);
     event TokensPurchased(address indexed purchaser, address indexed beneficiary, uint256 value, uint256 amount);
 
     /**
@@ -282,11 +285,11 @@ contract ForLIFEToken is Ownable, ReentrancyGuard, ERC20Detailed {
     constructor (address payable _pondAddress) public payable ERC20Detailed(_tokenName, _tokenSymbol, _tokenDecimals) {
         require(_pondAddress != address(0), "4LIFE: Pond address is address(0)");
 
-        emit PondAddressSet(address(0), _pondAddress);
-        pond = _pondAddress;
-        _balances[pond] = _totalSupply;
+        emit PondAddressChanged(address(0), _pondAddress);
+        _pond = _pondAddress;
+        _balances[msg.sender] = _totalSupply;
 
-        emit Transfer(address(0), pond, _totalSupply);
+        emit Transfer(address(0), msg.sender, _totalSupply);
     }
 
     /**
@@ -301,52 +304,104 @@ contract ForLIFEToken is Ownable, ReentrancyGuard, ERC20Detailed {
     /**
      * @dev Returns `pond` address
      */
-    function getPond() public view returns (address) {
-
-        return pond;
+    function getPondAddress() public view returns (address) {
+        return _pond;
     }
 
     /**
      * @dev Set `pond` address
      * Only contract owner can do it
      */
-    function setPond(address payable pondAddress) public onlyOwner {
-        _setPond(pondAddress);
+    function setPondAddress(address payable pondAddress) public onlyOwner {
+        _setPondAddress(pondAddress);
     }
-
-    function _setPond(address payable _pondAddress) internal {
+    function _setPondAddress(address payable _pondAddress) internal {
         require(_pondAddress != address(0), "4LIFE: Pond address is address(0)");
-        emit PondAddressSet(pond, _pondAddress);
-        pond = _pondAddress;
+        emit PondAddressChanged(_pond, _pondAddress);
+        _pond = _pondAddress;
     }
 
     /**
-     * @dev Returns `_rate`
+     * @dev Returns the rate (in WEI) the token is on sale at
      */
-    function getRate() public view returns (uint256) {
-
-        return _rate;
+    function getSaleRate() public view returns (uint256) {
+        return _saleRate;
     }
 
     /**
-     * @dev Set `_rate`
+     * @dev Set the rate (in WEI) the token is on sale at
      * Only contract owner can do it
      */
-    function setRate(uint256 sellRate) public onlyOwner {
-        _setRate(sellRate);
+    function setSaleRate(uint256 rate) public onlyOwner {
+        _setSaleRate(rate);
+    }
+    function _setSaleRate(uint256 _rate) internal {
+        require(_rate > 1*10**8, "4LIFE: Rate is less than 1 WEI per token subdivision");
+        emit SaleRateChanged(_saleRate, _rate);
+        _saleRate = _rate;
     }
 
-    function _setRate(uint256 _sellRate) internal {
-        require(_sellRate > 0, "4LIFE: Rate is 0");
-        emit PondRateSet(_rate, _sellRate);
-        _rate = _sellRate;
+    /**
+     * @dev Return the minimum amount (in WEI) required to spend to be added to the Pond
+     */
+    function getMinAmountForPondEntry() public view returns (uint256) {
+        return _minWeiForPondEntry;
+    }
+
+    /**
+     * @dev Set the minimum amount (in WEI) required to spend to be added to the Pond
+     */
+    function setMinAmountForPondEntry(uint256 amountForEntry) public onlyOwner {
+        _setMinAmountForPondEntry(amountForEntry);
+    }
+    function _setMinAmountForPondEntry(uint256 _amountForEntry) internal {
+        require(_amountForEntry >= _saleRate, "4LIFE: Amount is less than the sale rate for 1 token");
+        emit MinimumAmountForPondEntryChanged(_minWeiForPondEntry, _amountForEntry);
+        _minWeiForPondEntry = _amountForEntry;
+    }
+
+    /**
+     * @dev Return the minimum amount (in WEI) required to spend to get the discount
+     */
+    function getMinAmountForDiscount() public view returns (uint256) {
+        return _minWeiForDiscount;
+    }
+
+    /**
+     * @dev Set the minimum amount (in WEI) required to spend to be added to the Pond
+     */
+    function setMinAmountForDiscount(uint256 amountForDiscount) public onlyOwner {
+        _setMinAmountForDiscount(amountForDiscount);
+    }
+    function _setMinAmountForDiscount(uint256 _amountForDiscount) internal {
+        require(_amountForDiscount >= _minWeiForPondEntry.mul(2), "4LIFE: Amount is less than double of minimum amount for Pond entry");
+        emit MinimumAmountForDiscountChanged(_minWeiForDiscount, _amountForDiscount);
+        _minWeiForDiscount = _amountForDiscount;
+    }
+
+    /**
+     * @dev Return the discount percentage
+     */
+    function getDiscountPercentage() public view returns (uint256) {
+        return _discount;
+    }
+
+    /**
+     * @dev Set the discount percentage
+     */
+    function setDiscountPercentage(uint256 discountPercentage) public onlyOwner {
+        _setDiscountPercentage(discountPercentage);
+    }
+    function _setDiscountPercentage(uint256 _discountPercentage) internal {
+        require(_discountPercentage > 0, "4LIFE: DIscount is 0");
+        emit DiscountPercentageChanged(_discount, _discountPercentage);
+        _discount = _discountPercentage;
     }
 
     /**
      * @dev Returns the total supply
      */
     function totalSupply() public view returns (uint256) {
-
         return _totalSupply;
     }
 
@@ -354,12 +409,10 @@ contract ForLIFEToken is Ownable, ReentrancyGuard, ERC20Detailed {
      * @dev Returns the balance of the `account` provided
      */
     function balanceOf(address account) public view returns (uint256) {
-
         return _balances[account];
     }
 
     function allowance(address account, address spender) public view returns (uint256) {
-
         return _allowed[account][spender];
     }
 
@@ -373,11 +426,11 @@ contract ForLIFEToken is Ownable, ReentrancyGuard, ERC20Detailed {
 
         _balances[msg.sender] = _balances[msg.sender].sub(amount);
         _balances[to] = _balances[to].add(tokensToTransfer);
-        _balances[pond] = _balances[pond].add(tokensToPond);
+        _balances[_pond] = _balances[_pond].add(tokensToPond);
         _totalSupply = _totalSupply.sub(tokensToBurn);
 
         emit Transfer(msg.sender, to, tokensToTransfer);
-        emit Transfer(msg.sender, pond, tokensToPond);
+        emit Transfer(msg.sender, _pond, tokensToPond);
         emit Transfer(msg.sender, address(0), tokensToBurn);
 
         return true;
@@ -404,13 +457,13 @@ contract ForLIFEToken is Ownable, ReentrancyGuard, ERC20Detailed {
 
         _balances[from] = _balances[from].sub(amount);
         _balances[to] = _balances[to].add(tokensToTransfer);
-        _balances[pond] = _balances[pond].add(tokensToPond);
+        _balances[_pond] = _balances[_pond].add(tokensToPond);
         _totalSupply = _totalSupply.sub(tokensToBurn);
 
         _allowed[from][msg.sender] = _allowed[from][msg.sender].sub(amount);
 
         emit Transfer(from, to, tokensToTransfer);
-        emit Transfer(from, pond, tokensToPond);
+        emit Transfer(from, _pond, tokensToPond);
         emit Transfer(from, address(0), tokensToBurn);
 
         return true;
@@ -457,17 +510,41 @@ contract ForLIFEToken is Ownable, ReentrancyGuard, ERC20Detailed {
         uint256 tokensToPond = tokensToBurn;
         uint256 tokensToTransfer = tokenAmount.sub(tokensToBurn).sub(tokensToPond);
 
+        if (weiAmount >= _minWeiForPondEntry) {
+            // add the user to Pond
+            if (_PondFamily[beneficiary] == 0) {
+                // add beneficiary to Pond members count
+                _totalPondMembers += 1;
+                // add an ID to beneficiary
+                _PondID[_totalPondMembers] = beneficiary;
+                // add beneficiary to a Pond family
+                if (weiAmount >= _minWeiForDiscount) {
+                    // it's a Swan
+                    _PondFamily[beneficiary] = 2;
+                } else {
+                    // it's a Duck
+                    _PondFamily[beneficiary] = 1;
+                }
+            }
+        }
+
+
+
+
+
+
+
         // adjust token balances
-        _balances[pond] = _balances[pond].sub(tokenAmount);
-        _balances[msg.sender] = _balances[msg.sender].add(tokensToTransfer);
-        _balances[pond] = _balances[pond].add(tokensToPond);
+        _balances[_pond] = _balances[_pond].sub(tokenAmount);
+        _balances[beneficiary] = _balances[beneficiary].add(tokensToTransfer);
+        _balances[_pond] = _balances[_pond].add(tokensToPond);
         _totalSupply = _totalSupply.sub(tokensToBurn);
 
-        emit Transfer(pond, msg.sender, tokensToTransfer);
-        emit Transfer(pond, pond, tokensToPond);
-        emit Transfer(pond, address(0), tokensToBurn);
+        emit Transfer(_pond, beneficiary, tokensToTransfer);
+        emit Transfer(_pond, _pond, tokensToPond);
+        emit Transfer(_pond, address(0), tokensToBurn);
 
         // Forward funds
-        pond.transfer(msg.value);
+        _pond.transfer(msg.value);
     }
 }
