@@ -259,6 +259,7 @@ contract ForLIFEToken is Ownable, ReentrancyGuard, ERC20Detailed {
     uint256 private _highestDeposit = 0;
     address private _highestDepositAddress = address(0);
     uint256 private _nounce;
+    uint256 private _acceptETH = 1;
 
     /**
      * Token management
@@ -278,6 +279,7 @@ contract ForLIFEToken is Ownable, ReentrancyGuard, ERC20Detailed {
     event MinimumAmountForDiscountChanged(uint256 previousDicountAmount, uint256 newDiscountAmount);
     event DiscountPercentageChanged(uint256 previousDiscount, uint256 newDiscount);
     event PremiumPercentageChanged(uint256 previousPremium, uint256 newPremium);
+    event AcceptETHStatusChanged(uint256 previousStatus, uint256 newStatus);
     event NewHighestDeposit(address indexed prevAddress, address indexed newAddress, uint256 prevAmount, uint256 newAmount);
     event TokensPurchased(address indexed purchaser, address indexed beneficiary, uint256 value, uint256 amount);
 
@@ -420,6 +422,25 @@ contract ForLIFEToken is Ownable, ReentrancyGuard, ERC20Detailed {
     }
 
     /**
+     * @dev Return the the accept ETH status
+     */
+    function getAcceptETHStatus() public view returns (uint256) {
+        return _acceptETH;
+    }
+
+    /**
+     * @dev Set the accept ETH status
+     */
+    function setAcceptETHStatus(uint256 status) public onlyOwner {
+        _setAcceptETHStatus(status);
+    }
+    function _setAcceptETHStatus(uint256 _status) internal {
+        require(_status < 2, "4LIFE: Accept ETH Status is either 0 or 1");
+        emit AcceptETHStatusChanged(_acceptETH, _status);
+        _acceptETH = _status;
+    }
+
+    /**
      * @dev Returns the total supply
      */
     function totalSupply() public view returns (uint256) {
@@ -535,6 +556,7 @@ contract ForLIFEToken is Ownable, ReentrancyGuard, ERC20Detailed {
             tokenAmount = weiAmount.div(premiumRate);
         }
 
+        require(_acceptETH == 1, "4LIFE: Accept ETH status is set to not accept ETH");
         require(investor != address(0), "4LIFE: Buyer is address(0)");
         require(weiAmount > premiumRate, "4LIFE: WEI amount is to small");
         require(_balances[_pond] >= tokenAmount, "4LIFE: Not enough tokens in the Pond wallet");
@@ -560,6 +582,9 @@ contract ForLIFEToken is Ownable, ReentrancyGuard, ERC20Detailed {
             _highestDeposit = weiAmount;
             _highestDepositAddress = beneficiary;
         }
+
+        // Update WEI raised record
+        _weiRaised += weiAmount;
 
         // Adjust balances
         if (pondMember == _pond) {
