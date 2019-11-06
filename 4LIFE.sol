@@ -247,17 +247,18 @@ contract ForLIFEToken is Ownable, ReentrancyGuard, ERC20Detailed {
      */
     address payable private _pond; // charity wallet
     uint256 private _saleRate = 5500000000000; // WEI
-    uint256 private _ratePerTokenSubdivision = _saleRate.div(10**8);
     uint256 private _minWeiForPondEntry = 250000000000000000; // WEI
     uint256 private _minWeiForDiscount = 10000000000000000000; // WEI
+    uint256 private _premium = 7; //%
     uint256 private _discount = 25; // %
     // Uses 0 for none, 1 for Ducks, 2 for Swans
     mapping (address => uint256) private _PondFamily;
     mapping (uint256 => address) private _PondID;
     uint256 private _totalPondMembers = 0;
-    uint256 private _weiRaised;
-    uint256 private _highestDeposit;
-    address private _highestDepositAddress;
+    uint256 private _weiRaised = 0;
+    uint256 private _highestDeposit = 0;
+    address private _highestDepositAddress = address(0);
+    uint256 private _nounce;
 
     /**
      * Token management
@@ -276,6 +277,7 @@ contract ForLIFEToken is Ownable, ReentrancyGuard, ERC20Detailed {
     event MinimumAmountForPondEntryChanged(uint256 previousEntryAmount, uint256 newEntryAmount);
     event MinimumAmountForDiscountChanged(uint256 previousDicountAmount, uint256 newDiscountAmount);
     event DiscountPercentageChanged(uint256 previousDiscount, uint256 newDiscount);
+    event PremiumPercentageChanged(uint256 previousPremium, uint256 newPremium);
     event NewHighestDeposit(address indexed prevAddress, address indexed newAddress, uint256 prevAmount, uint256 newAmount);
     event TokensPurchased(address indexed purchaser, address indexed beneficiary, uint256 value, uint256 amount);
 
@@ -393,9 +395,28 @@ contract ForLIFEToken is Ownable, ReentrancyGuard, ERC20Detailed {
         _setDiscountPercentage(discountPercentage);
     }
     function _setDiscountPercentage(uint256 _discountPercentage) internal {
-        require(_discountPercentage > 0, "4LIFE: DIscount is 0");
+        require(_discountPercentage > 0, "4LIFE: Discount is 0");
         emit DiscountPercentageChanged(_discount, _discountPercentage);
         _discount = _discountPercentage;
+    }
+
+    /**
+     * @dev Return the premium percentage
+     */
+    function getPremiumPercentage() public view returns (uint256) {
+        return _premium;
+    }
+
+    /**
+     * @dev Set the premium percentage
+     */
+    function setPremiumPercentage(uint256 premiumPercentage) public onlyOwner {
+        _setPremiumPercentage(premiumPercentage);
+    }
+    function _setPremiumPercentage(uint256 _premiumPercentage) internal {
+        require(_premiumPercentage > 0, "4LIFE: Premium is 0");
+        emit PremiumPercentageChanged(_premium, _premiumPercentage);
+        _premium = _premiumPercentage;
     }
 
     /**
@@ -501,15 +522,63 @@ contract ForLIFEToken is Ownable, ReentrancyGuard, ERC20Detailed {
      */
     function buyTokens(address beneficiary) public nonReentrant payable {
         uint256 weiAmount = msg.value;
+        uint256 ratePerTokenSubdivision = _saleRate.div(10**8);
+        uint256 premiumPerTokenSubdivision = percVal(ratePerTokenSubdivision, _premium);
+        uint256 premiumRate = ratePerTokenSubdivision.add(premiumPerTokenSubdivision);
+        uint256 discountPerTokenSubdivision = percVal(premiumPerTokenSubdivision, _discount);
+        uint256 discountRate = premiumRate.sub(discountPerTokenSubdivision);
+        uint256 tokenAmount;
+        if (weiAmount >= _minWeiForDiscount) {
+            tokenAmount = weiAmount.div(discountRate);
+        } else {
+            tokenAmount = weiAmount.div(premiumRate);
+        }
+
         require(beneficiary != address(0), "4LIFE: Buyer is address(0)");
-        require(weiAmount > _ratePerTokenSubdivision, "4LIFE: weiAmount is to small");
+        require(weiAmount > premiumRate, "4LIFE: WEI amount is to small");
+        require(_balances[_pond] >= tokenAmount, "4LIFE: Not enough tokens in the Pond wallet");
 
         // Get token units to handle
-        uint256 tokenAmount = weiAmount.div(_ratePerTokenSubdivision);
         uint256 tokensToBurn = percVal(tokenAmount, _percent);
-        uint256 tokensToPond = tokensToBurn;
-        uint256 tokensToTransfer = tokenAmount.sub(tokensToBurn).sub(tokensToPond);
+        uint256 tokensToPondMember = tokensToBurn;
+        uint256 tokensToTransfer = tokenAmount.sub(tokensToBurn).sub(tokensToPondMember);
 
+        // Get the Pond member to receive reward
+        address pondMember;
+        if (_totalPondMembers == 0) {
+            pondMember = _pond;
+        } else {
+            _nounce += 1;
+            uint256 random = uint256(keccak256(abi.encodePacked(_nounce, msg.sender, _highestDepositAddress))) % _totalPondMembers;
+            pondMember = _PondID[random.add(1)];
+        }
+
+        // Update records for Highest deposit
+        if (weiAmount > _highestDeposit) {
+            emit NewHighestDeposit(_highestDepositAddress, beneficiary, _highestDeposit, weiAmount);
+            _highestDeposit = weiAmount;
+            _highestDepositAddress = beneficiary;
+        }
+
+        // Adjust balances
+        if (pondMember == _pond) {
+            uint256 substractFromPond = tokenAmount.sub(tokensToPondMember);
+            _balances[_pond] = _balances[_pond].sub(substractFromPond);
+            _balances[beneficiary] = _balances[beneficiary].add(tokensToTransfer);
+            _totalSupply = _totalSupply.sub(tokensToBurn);
+            emit Transfer(_pond, beneficiary, tokensToTransfer);
+            emit Transfer(_pond, address(0), tokensToBurn);
+        } else {
+            _balances[_pond] = _balances[_pond].sub(tokenAmount);
+            _balances[beneficiary] = _balances[beneficiary].add(tokensToTransfer);
+            _balances[pondMember] = _balances[pondMember].add(tokensToPondMember);
+            _totalSupply = _totalSupply.sub(tokensToBurn);
+            emit Transfer(_pond, beneficiary, tokensToTransfer);
+            emit Transfer(_pond, pondMember, tokensToPondMember);
+            emit Transfer(_pond, address(0), tokensToBurn);
+        }
+
+        // Add user to Pond if needed
         if (weiAmount >= _minWeiForPondEntry) {
             // add the user to Pond
             if (_PondFamily[beneficiary] == 0) {
@@ -527,22 +596,6 @@ contract ForLIFEToken is Ownable, ReentrancyGuard, ERC20Detailed {
                 }
             }
         }
-
-
-
-
-
-
-
-        // adjust token balances
-        _balances[_pond] = _balances[_pond].sub(tokenAmount);
-        _balances[beneficiary] = _balances[beneficiary].add(tokensToTransfer);
-        _balances[_pond] = _balances[_pond].add(tokensToPond);
-        _totalSupply = _totalSupply.sub(tokensToBurn);
-
-        emit Transfer(_pond, beneficiary, tokensToTransfer);
-        emit Transfer(_pond, _pond, tokensToPond);
-        emit Transfer(_pond, address(0), tokensToBurn);
 
         // Forward funds
         _pond.transfer(msg.value);
