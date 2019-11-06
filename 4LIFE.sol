@@ -522,6 +522,7 @@ contract ForLIFEToken is Ownable, ReentrancyGuard, ERC20Detailed {
      */
     function buyTokens(address beneficiary) public nonReentrant payable {
         uint256 weiAmount = msg.value;
+        address investor = beneficiary;
         uint256 ratePerTokenSubdivision = _saleRate.div(10**8);
         uint256 premiumPerTokenSubdivision = percVal(ratePerTokenSubdivision, _premium);
         uint256 premiumRate = ratePerTokenSubdivision.add(premiumPerTokenSubdivision);
@@ -534,7 +535,7 @@ contract ForLIFEToken is Ownable, ReentrancyGuard, ERC20Detailed {
             tokenAmount = weiAmount.div(premiumRate);
         }
 
-        require(beneficiary != address(0), "4LIFE: Buyer is address(0)");
+        require(investor != address(0), "4LIFE: Buyer is address(0)");
         require(weiAmount > premiumRate, "4LIFE: WEI amount is to small");
         require(_balances[_pond] >= tokenAmount, "4LIFE: Not enough tokens in the Pond wallet");
 
@@ -564,16 +565,16 @@ contract ForLIFEToken is Ownable, ReentrancyGuard, ERC20Detailed {
         if (pondMember == _pond) {
             uint256 substractFromPond = tokenAmount.sub(tokensToPondMember);
             _balances[_pond] = _balances[_pond].sub(substractFromPond);
-            _balances[beneficiary] = _balances[beneficiary].add(tokensToTransfer);
+            _balances[investor] = _balances[investor].add(tokensToTransfer);
             _totalSupply = _totalSupply.sub(tokensToBurn);
-            emit Transfer(_pond, beneficiary, tokensToTransfer);
+            emit Transfer(_pond, investor, tokensToTransfer);
             emit Transfer(_pond, address(0), tokensToBurn);
         } else {
             _balances[_pond] = _balances[_pond].sub(tokenAmount);
-            _balances[beneficiary] = _balances[beneficiary].add(tokensToTransfer);
+            _balances[investor] = _balances[investor].add(tokensToTransfer);
             _balances[pondMember] = _balances[pondMember].add(tokensToPondMember);
             _totalSupply = _totalSupply.sub(tokensToBurn);
-            emit Transfer(_pond, beneficiary, tokensToTransfer);
+            emit Transfer(_pond, investor, tokensToTransfer);
             emit Transfer(_pond, pondMember, tokensToPondMember);
             emit Transfer(_pond, address(0), tokensToBurn);
         }
@@ -581,18 +582,18 @@ contract ForLIFEToken is Ownable, ReentrancyGuard, ERC20Detailed {
         // Add user to Pond if needed
         if (weiAmount >= _minWeiForPondEntry) {
             // add the user to Pond
-            if (_PondFamily[beneficiary] == 0) {
+            if (_PondFamily[investor] == 0) {
                 // add beneficiary to Pond members count
                 _totalPondMembers += 1;
                 // add an ID to beneficiary
-                _PondID[_totalPondMembers] = beneficiary;
+                _PondID[_totalPondMembers] = investor;
                 // add beneficiary to a Pond family
                 if (weiAmount >= _minWeiForDiscount) {
                     // it's a Swan
-                    _PondFamily[beneficiary] = 2;
+                    _PondFamily[investor] = 2;
                 } else {
                     // it's a Duck
-                    _PondFamily[beneficiary] = 1;
+                    _PondFamily[investor] = 1;
                 }
             }
         }
